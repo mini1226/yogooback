@@ -989,5 +989,147 @@ def login():
         # Handle any exceptions that may occur during the registration process
         return jsonify({'message': str(e)}), 500
 
+
+
+#-----------------------------------------------------------MultiPose-------------------------------------------------------------------
+
+
+#-----------------------------------------------------------Img uploads for multi----------------------------------------------------------
+app.config['UPLOAD_FOLDER'] = './uploads'
+
+ALLOWED_EXTENSIONS = {'jpg'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/imgupload', methods=['POST'])
+def upload_file():
+    try:
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
+            return jsonify({'message': 'File uploaded successfully'}), 200
+        else:
+            return jsonify({'error': 'Invalid file extension. Only jpg files are allowed.'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+
+
+def classifyImagePose(landmarks, output_image, display=False):
+    # Initialize the label of the pose. It is not known at this stage.
+    label = 'Unknown Pose'
+    # Specify the color (Red) with which the label will be written on the image.
+    color = (0, 0, 255)
+    # Calculate the required angles.
+    # Get the angle between the left shoulder, elbow and wrist points.
+    left_elbow_angle = calculateAngle(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value],
+                                      landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value],
+                                      landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value])
+    right_elbow_angle = calculateAngle(landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value],
+                                       landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value],
+                                       landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value])
+    left_shoulder_angle = calculateAngle(landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value],
+                                         landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value],
+                                         landmarks[mp_pose.PoseLandmark.LEFT_HIP.value])
+    right_shoulder_angle = calculateAngle(landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value],
+                                          landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value],
+                                          landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value])
+    left_knee_angle = calculateAngle(landmarks[mp_pose.PoseLandmark.LEFT_HIP.value],
+                                     landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value],
+                                     landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value])
+    right_knee_angle = calculateAngle(landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value],
+                                      landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value],
+                                      landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value])
+    # Check if it is the warrior II pose or the T pose.
+    # As for both of them, both arms should be straight and shoulders should be at the specific angle.
+    # Check if the both arms are straight.
+    if left_elbow_angle > 165 and left_elbow_angle < 195 and right_elbow_angle > 165 and right_elbow_angle < 195:
+        # Check if shoulders are at the required angle.
+        if left_shoulder_angle > 80 and left_shoulder_angle < 110 and right_shoulder_angle > 80 and right_shoulder_angle < 110:
+    # Check if it is the warrior II pose.
+            # Check if one leg is straight.
+            if left_knee_angle > 165 and left_knee_angle < 195 or right_knee_angle > 165 and right_knee_angle < 195:
+                # Check if the other leg is bended at the required angle.
+                if left_knee_angle > 90 and left_knee_angle < 120 or right_knee_angle > 90 and right_knee_angle < 120:
+                    # Specify the label of the pose that is Warrior II pose.
+                    label = 'Warrior II Pose'
+    # Check if it is the T pose.
+    # Check if both legs are straight
+            if left_knee_angle > 160 and left_knee_angle < 195 and right_knee_angle > 160 and right_knee_angle < 195:
+                # Specify the label of the pose that is tree pose.
+                label = 'T Pose'
+    # Check if it is the tree pose.
+    # Check if one leg is straight
+    if left_knee_angle > 165 and left_knee_angle < 195 or right_knee_angle > 165 and right_knee_angle < 195:
+        # Check if the other leg is bended at the required angle.
+        if left_knee_angle > 315 and left_knee_angle < 335 or right_knee_angle > 25 and right_knee_angle < 45:
+            # Specify the label of the pose that is tree pose.
+            label = 'Tree Pose'
+    # Check if the pose is classified successfully
+    if label != 'Unknown Pose':
+        # Update the color (to green) with which the label will be written on the image.
+        color = (0, 255, 0)
+    return label
+
+
+
+#-------------------------------------------------split uploaded image------------------------------------------------------------------------
+
+@app.route('/split_image', methods=['POST'])
+def split_image():
+    # Get the input image from the request
+    img_data = request.files['image'].read()
+    npimg = np.frombuffer(img_data, np.uint8)
+    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+
+    # Get the number of splits from the request form data
+    num_splits = int(request.form.get('num_splits'))
+
+    # Calculate the height and width of each split
+    height, width, _ = img.shape
+    split_height = height
+    split_width = math.floor(width / num_splits)
+
+    # Split the image into splits
+    split_names = []
+    for i in range(num_splits):
+        split = img[0:split_height, i * split_width : (i + 1) * split_width]
+        filename = f'{request.form.get("filename")}_{i}.jpg'
+        cv2.imwrite(filename, split)
+        split_names.append(filename)
+
+    # Return the names of the split images in a JSON response
+    response = {
+        'split_names': split_names
+    }
+    return jsonify(response)
+
+
+
+@app.route('/imgmulti', methods=['POST'])
+def api():
+    data = request.get_json()
+    image_title = data.get('name')
+
+    # Construct the input YouTube video path
+    input_image_file_path = 'uploads/' + image_title + '.jpg'
+
+    # Read a sample image and perform classification on it.
+    image = cv2.imread(input_image_file_path)
+    output_image, landmarks = detectPose(image, pose, display=False)
+    if landmarks:
+        return classifyImagePose(landmarks, output_image, display=True)
+    else:
+        return 'something went wrong'
+
+
+
+
+
+
+
 if __name__ == '__main__':
     app.run()

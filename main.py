@@ -791,20 +791,20 @@ def guide_pose():
 
 #---------------------------------------------------------------FILE UPLOADING API-------------------------------------------------------------
 
-app.config['UPLOAD_FOLDER'] = './uploads'
+app.config['VIDEO_UPLOAD_FOLDER'] = './uploads/videos'
 
-ALLOWED_EXTENSIONS = {'mp4'}
+ALLOWED_EXTENSIONS_VIDEO = {'mp4'}
 
-def allowed_file(filename):
+def allowed_video_file(filename):
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS_VIDEO
 
 @app.route('/upload', methods=['POST'])
-def upload_file():
+def upload_video_file():
     try:
         file = request.files['file']
-        if file and allowed_file(file.filename):
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
+        if file and allowed_video_file(file.filename):
+            file.save(os.path.join(app.config['VIDEO_UPLOAD_FOLDER'], file.filename))
             return jsonify({'message': 'File uploaded successfully'}), 200
         else:
             return jsonify({'error': 'Invalid file extension. Only mp4 files are allowed.'}), 400
@@ -886,7 +886,10 @@ def predict_single_action(video_file_path, SEQUENCE_LENGTH):
     # Release the VideoCapture object.
     video_reader.release()
 
-    return predicted_class_name
+    if (np.argmax(predicted_labels_probabilities) < 0.5):
+        return 'Wrong pose performed !'
+    else:
+        return predicted_class_name
 
 
 @app.route('/classify', methods=['POST'])
@@ -895,7 +898,7 @@ def api():
     video_title = data.get('name')
 
     # Construct the input YouTube video path
-    input_video_file_path = 'uploads/' + video_title + '.mp4'
+    input_video_file_path = 'uploads/videos/' + video_title
 
     # Perform Single Prediction on the Test Video.
     class_name = predict_single_action(input_video_file_path, SEQUENCE_LENGTH)
@@ -995,20 +998,20 @@ def login():
 
 
 #-----------------------------------------------------------Img uploads for multi----------------------------------------------------------
-app.config['UPLOAD_FOLDER'] = './uploads'
+app.config['IMAGE_UPLOAD_FOLDER'] = './uploads/images'
 
-ALLOWED_EXTENSIONS = {'jpg'}
+ALLOWED_EXTENSIONS_IMAGES = {'jpg'}
 
-def allowed_file(filename):
+def allowed_image_file(filename):
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS_IMAGES
 
 @app.route('/imgupload', methods=['POST'])
-def upload_file():
+def upload_image_file():
     try:
         file = request.files['file']
-        if file and allowed_file(file.filename):
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
+        if file and allowed_image_file(file.filename):
+            file.save(os.path.join(app.config['IMAGE_UPLOAD_FOLDER'], file.filename))
             return jsonify({'message': 'File uploaded successfully'}), 200
         else:
             return jsonify({'error': 'Invalid file extension. Only jpg files are allowed.'}), 400
@@ -1080,13 +1083,14 @@ def classifyImagePose(landmarks, output_image, display=False):
 
 @app.route('/split_image', methods=['POST'])
 def split_image():
-    # Get the input image from the request
-    img_data = request.files['image'].read()
-    npimg = np.frombuffer(img_data, np.uint8)
-    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    data = request.get_json()
+    image_title = data.get('name')
+    num_splits = data.get('num_splits')
 
-    # Get the number of splits from the request form data
-    num_splits = int(request.form.get('num_splits'))
+    # Construct the input YouTube video path
+    input_image_file_path = 'uploads/images/' + image_title
+
+    img = cv2.imread(input_image_file_path)
 
     # Calculate the height and width of each split
     height, width, _ = img.shape
@@ -1097,20 +1101,30 @@ def split_image():
     split_names = []
     for i in range(num_splits):
         split = img[0:split_height, i * split_width : (i + 1) * split_width]
-        filename = f'{request.form.get("filename")}_{i}.jpg'
+        filename = f'uploads/images/{image_title}_{i}.jpg'
         cv2.imwrite(filename, split)
         split_names.append(filename)
 
+
+    for i in range(split_names):
+        # Read a sample image and perform classification on it.
+        image = cv2.imread(input_image_file_path)
+        output_image, landmarks = detectPose(image, pose, display=False)
+        if landmarks:
+            return classifyImagePose(landmarks, output_image, display=True)
+        else:
+            return 'something went wrong'
     # Return the names of the split images in a JSON response
-    response = {
-        'split_names': split_names
-    }
-    return jsonify(response)
+    # response = {
+    #     'split_names': split_names
+    # }
+
+
 
 
 
 @app.route('/imgmulti', methods=['POST'])
-def api():
+def multiapi():
     data = request.get_json()
     image_title = data.get('name')
 

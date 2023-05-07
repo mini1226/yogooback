@@ -1106,18 +1106,11 @@ def split_image():
         split_names.append(filename)
 
 
-    for i in range(split_names):
-        # Read a sample image and perform classification on it.
-        image = cv2.imread(input_image_file_path)
-        output_image, landmarks = detectPose(image, pose, display=False)
-        if landmarks:
-            return classifyImagePose(landmarks, output_image, display=True)
-        else:
-            return 'something went wrong'
+
     # Return the names of the split images in a JSON response
-    # response = {
-    #     'split_names': split_names
-    # }
+    response = {
+        'split_names': split_names
+    }
 
 
 

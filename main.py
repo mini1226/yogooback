@@ -1081,6 +1081,44 @@ def classifyImagePose(landmarks, output_image, display=False):
 
 #-------------------------------------------------split uploaded image------------------------------------------------------------------------
 
+# @app.route('/split_image', methods=['POST'])
+# def split_image():
+#     data = request.get_json()
+#     image_title = data.get('name')
+#     num_splits = data.get('num_splits')
+#
+#     # Construct the input YouTube video path
+#     input_image_file_path = 'uploads/images/' + image_title
+#
+#     img = cv2.imread(input_image_file_path)
+#
+#     # Calculate the height and width of each split
+#     height, width, _ = img.shape
+#     split_height = height
+#     split_width = math.floor(width / num_splits)
+#
+#     # Split the image into splits
+#     split_names = []
+#     for i in range(num_splits):
+#         split = img[0:split_height, i * split_width : (i + 1) * split_width]
+#         filename = f'uploads/images/{image_title}_{i}.jpg'
+#         cv2.imwrite(filename, split)
+#         split_names.append(filename)
+#
+#     # for i in range(num_splits):
+#     #     filename = f'uploads/images/{image_title}_{i}.jpg'
+#     #     print(filename)
+#
+#     # Return the names of the split images in a JSON response
+#     response = {
+#         'split_names': split_names
+#     }
+#     return jsonify(response)
+
+
+
+import base64
+
 @app.route('/split_image', methods=['POST'])
 def split_image():
     data = request.get_json()
@@ -1089,6 +1127,7 @@ def split_image():
 
     # Construct the input YouTube video path
     input_image_file_path = 'uploads/images/' + image_title
+    output = 'pose not detected'
 
     img = cv2.imread(input_image_file_path)
 
@@ -1098,21 +1137,32 @@ def split_image():
     split_width = math.floor(width / num_splits)
 
     # Split the image into splits
-    split_names = []
+    split_data = []
     for i in range(num_splits):
         split = img[0:split_height, i * split_width : (i + 1) * split_width]
+        _, encoded_image = cv2.imencode('.jpg', split)
+        base64_image = base64.b64encode(encoded_image).decode('utf-8')
+
         filename = f'uploads/images/{image_title}_{i}.jpg'
         cv2.imwrite(filename, split)
-        split_names.append(filename)
 
+        # Read a sample image and perform classification on it.
+        image = cv2.imread(filename)
+        output_image, landmarks = detectPose(image, pose, display=False)
+        if landmarks:
+            output = classifyImagePose(landmarks, output_image, display=True)
 
+        split_data.append({
+            'name': filename,
+            'data': base64_image,
+            'pose': output
+        })
 
-    # Return the names of the split images in a JSON response
+    # Return the split image data in a JSON response
     response = {
-        'split_names': split_names
+        'splits': split_data
     }
-
-
+    return jsonify(response)
 
 
 
@@ -1121,18 +1171,18 @@ def multiapi():
     data = request.get_json()
     image_title = data.get('name')
 
+    output = 'pose not detected'
+
     # Construct the input YouTube video path
-    input_image_file_path = 'uploads/' + image_title + '.jpg'
+    input_image_file_path = 'uploads/images/' + image_title
 
     # Read a sample image and perform classification on it.
     image = cv2.imread(input_image_file_path)
     output_image, landmarks = detectPose(image, pose, display=False)
     if landmarks:
-        return classifyImagePose(landmarks, output_image, display=True)
-    else:
-        return 'something went wrong'
+        output = classifyImagePose(landmarks, output_image, display=True)
 
-
+    return output
 
 
 

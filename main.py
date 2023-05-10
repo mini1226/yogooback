@@ -886,10 +886,11 @@ def predict_single_action(video_file_path, SEQUENCE_LENGTH):
     # Release the VideoCapture object.
     video_reader.release()
 
-    if (np.argmax(predicted_labels_probabilities) < 0.5):
-        return 'Wrong pose performed !'
-    else:
-        return predicted_class_name
+    # if (np.argmax(predicted_labels_probabilities) < 0.5):
+    #     return 'Wrong pose performed !'
+    # else:
+    #     return predicted_class_name
+    return predicted_class_name
 
 
 @app.route('/classify', methods=['POST'])
@@ -1055,7 +1056,7 @@ def classifyImagePose(landmarks, output_image, display=False):
     # Check if it is the warrior II pose.
             # Check if one leg is straight.
             if left_knee_angle > 165 and left_knee_angle < 195 or right_knee_angle > 165 and right_knee_angle < 195:
-                # Check if the other leg is bended at the required angle.
+                # Check if the other leg is bent at the required angle.
                 if left_knee_angle > 90 and left_knee_angle < 120 or right_knee_angle > 90 and right_knee_angle < 120:
                     # Specify the label of the pose that is Warrior II pose.
                     label = 'Warrior II Pose'
@@ -1184,6 +1185,36 @@ def multiapi():
 
     return output
 
+
+
+
+@app.route('/detect_persons_and_split_image', methods=['POST'])
+def detect_persons_and_split_image():
+    # Get the input image from the request
+    img_data = request.files['image'].read()
+    npimg = np.frombuffer(img_data, np.uint8)
+    img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+
+    # Load the HOG detector for pedestrian detection
+    hog = cv2.HOGDescriptor()
+    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+
+    # Detect persons in the image
+    (rects, _) = hog.detectMultiScale(img, winStride=(4, 4), padding=(8, 8), scale=1.05)
+
+    # Split the image into the number of persons detected
+    split_names = []
+    for i, (x, y, w, h) in enumerate(rects):
+        split = img[y:y+h, x:x+w]
+        filename = f'split_{i}.jpg'
+        cv2.imwrite(filename, split)
+        split_names.append(filename)
+
+    # Return the names of the split images in a JSON response
+    response = {
+        'split_names': split_names
+    }
+    return jsonify(response)
 
 
 
